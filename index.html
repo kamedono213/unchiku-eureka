@@ -855,7 +855,7 @@ rt { font-size: .55em; line-height: 1; font-weight: 700; }
 
       <div class="feature-grid">
         <button id="dailyButton" class="feature-card daily-feature" type="button"><span class="feature-icon" data-no-reading="true">📅</span><strong>今日の5問</strong><small id="dailyStatus"></small></button>
-        <button id="categoriesButton" class="feature-card" type="button"><span class="feature-icon" data-no-reading="true">🧭</span><strong>ジャンルから遊ぶ</strong><small>好きな分野だけ5問</small></button>
+        <button id="categoriesButton" class="feature-card" type="button"><span class="feature-icon" data-no-reading="true">🧭</span><strong>ジャンルから遊ぶ</strong><small>好きな分野で挑戦</small></button>
         <button id="dictionaryButton" class="feature-card" type="button"><span class="feature-icon" data-no-reading="true">📖</span><strong>うんちく辞典</strong><small>★・知らなかった！を保存</small></button>
         <button id="titlesButton" class="feature-card" type="button"><span class="feature-icon" data-no-reading="true">🏆</span><strong>称号</strong><small id="titleStatus"></small></button>
       </div>
@@ -896,7 +896,7 @@ rt { font-size: .55em; line-height: 1; font-weight: 700; }
 
   <template id="categoriesTemplate">
     <section class="categories-view">
-      <div class="dictionary-head-card"><h1>ジャンルから遊ぶ</h1><p>好きな分野の問題だけからランダムに5問出題します。</p></div>
+      <div class="dictionary-head-card"><h1>ジャンルから遊ぶ</h1><p>ジャンルを押すと「通常モード」と「連続エウレーカ」を選べます。</p></div>
       <div id="categoryGrid" class="category-grid"></div>
       <button id="categoryBackButton" class="secondary-button" type="button">トップページへ</button>
     </section>
@@ -11271,6 +11271,14 @@ window.QUIZ_QUESTIONS = [
     return window.QUIZ_QUESTIONS.filter(q => q.level === level);
   }
 
+  function getQuestionsForCategory(key) {
+    return window.QUIZ_QUESTIONS.filter(CATEGORY_GROUPS[key].match);
+  }
+
+  function streakStatsKey() {
+    return state.categoryGroup ? `cat:${state.categoryGroup}` : state.level;
+  }
+
   function isFavorite(id) {
     return favoriteIds.includes(id);
   }
@@ -11761,7 +11769,7 @@ window.QUIZ_QUESTIONS = [
   function getNextStreakQuestion() {
     state.index += 1;
     if (state.index >= state.questions.length) {
-      state.questions = shuffle(getQuestionsForLevel(state.level));
+      state.questions = shuffle(state.categoryGroup ? getQuestionsForCategory(state.categoryGroup) : getQuestionsForLevel(state.level));
       state.index = 0;
     }
     state.selected = null;
@@ -11799,12 +11807,30 @@ window.QUIZ_QUESTIONS = [
   function showModeSelect(level) {
     state.view = "modeSelect";
     state.level = level;
+    state.categoryGroup = null;
     app.replaceChildren(cloneTemplate(modeSelectTemplate));
     document.getElementById("modeLevelTitle").textContent = `${LEVELS[level].name}｜遊び方を選ぶ`;
     document.getElementById("streakBestText").textContent = `最高記録：${stats.streakBest[level] || 0}問連続`;
     document.getElementById("normalModeButton").addEventListener("click", () => startGame(level, "normal"));
     document.getElementById("streakModeButton").addEventListener("click", () => startGame(level, "streak"));
-    document.getElementById("modeBackButton").addEventListener("click", showHome);
+    const backButton = document.getElementById("modeBackButton");
+    backButton.textContent = "難易度選択へ戻る";
+    backButton.addEventListener("click", showHome);
+  }
+
+  function showCategoryModeSelect(key) {
+    state.view = "categoryModeSelect";
+    state.level = null;
+    state.categoryGroup = key;
+    const group = CATEGORY_GROUPS[key];
+    app.replaceChildren(cloneTemplate(modeSelectTemplate));
+    document.getElementById("modeLevelTitle").textContent = `${group.name}｜遊び方を選ぶ`;
+    document.getElementById("streakBestText").textContent = `最高記録：${stats.streakBest[`cat:${key}`] || 0}問連続`;
+    document.getElementById("normalModeButton").addEventListener("click", () => startCategory(key, "normal"));
+    document.getElementById("streakModeButton").addEventListener("click", () => startCategory(key, "streak"));
+    const backButton = document.getElementById("modeBackButton");
+    backButton.textContent = "ジャンル選択へ戻る";
+    backButton.addEventListener("click", showCategories);
   }
 
   function startGame(level, mode = "normal") {
@@ -11834,27 +11860,27 @@ window.QUIZ_QUESTIONS = [
     app.replaceChildren(cloneTemplate(categoriesTemplate));
     const grid = document.getElementById("categoryGrid");
     for (const [key, group] of Object.entries(CATEGORY_GROUPS)) {
-      const pool = window.QUIZ_QUESTIONS.filter(group.match);
+      const pool = getQuestionsForCategory(key);
       if (pool.length < 5) continue;
       const button = document.createElement("button");
       button.className = "category-card";
       button.type = "button";
       button.innerHTML = `<span class="category-icon" data-no-reading="true">${group.icon}</span><strong>${group.name}</strong><small>${pool.length}問</small>`;
-      button.addEventListener("click", () => startCategory(key));
+      button.addEventListener("click", () => showCategoryModeSelect(key));
       grid.appendChild(button);
     }
     document.getElementById("categoryBackButton").addEventListener("click", showHome);
   }
 
-  function startCategory(key) {
-    const group = CATEGORY_GROUPS[key];
-    const pool = window.QUIZ_QUESTIONS.filter(group.match);
+  function startCategory(key, mode = "normal") {
+    const pool = getQuestionsForCategory(key);
     state = {
-      view: "question", mode: "category", level: "category", categoryGroup: key,
-      questions: shuffle(pool).slice(0, QUESTIONS_PER_GAME), index: 0, score: 0, selected: null,
+      view: "question", mode, level: null, categoryGroup: key,
+      questions: shuffle(pool), index: 0, score: 0, selected: null,
       activeHintIndex: null, usedHintCurrent: false, hintsUsedTotal: 0,
       streak: 0, streakEnded: false, dictionaryKind: "favorite", pendingUnlocks: [], resultFinalized: false
     };
+    if (mode !== "streak") state.questions = state.questions.slice(0, QUESTIONS_PER_GAME);
     if (!stats.categoriesPlayed.includes(key)) stats.categoriesPlayed.push(key);
     saveStats();
     refreshAchievements();
@@ -11863,7 +11889,10 @@ window.QUIZ_QUESTIONS = [
 
   function currentModeLabel() {
     if (state.mode === "daily") return "今日の5問";
-    if (state.mode === "category") return CATEGORY_GROUPS[state.categoryGroup]?.name || "カテゴリ";
+    if (state.categoryGroup) {
+      const name = CATEGORY_GROUPS[state.categoryGroup]?.name || "カテゴリ";
+      return state.mode === "streak" ? `${name}｜連続エウレーカ` : name;
+    }
     if (state.mode === "streak") return `${LEVELS[state.level].name}｜連続エウレーカ`;
     return `${LEVELS[state.level].name}｜${LEVELS[state.level].desc}`;
   }
@@ -11932,7 +11961,8 @@ window.QUIZ_QUESTIONS = [
     if (correct) stats.totalCorrect += 1;
     if (correct && isRareQuestion(question)) stats.rareCorrect += 1;
     if (state.mode === "streak" && correct) {
-      stats.streakBest[state.level] = Math.max(stats.streakBest[state.level] || 0, state.streak);
+      const key = streakStatsKey();
+      stats.streakBest[key] = Math.max(stats.streakBest[key] || 0, state.streak);
     }
     saveStats();
     refreshAchievements();
@@ -11946,7 +11976,8 @@ window.QUIZ_QUESTIONS = [
     if (state.mode === "streak") {
       if (correct) {
         state.streak += 1;
-        stats.streakBest[state.level] = Math.max(stats.streakBest[state.level] || 0, state.streak);
+        const key = streakStatsKey();
+        stats.streakBest[key] = Math.max(stats.streakBest[key] || 0, state.streak);
       } else {
         state.streakEnded = true;
       }
@@ -12088,15 +12119,16 @@ window.QUIZ_QUESTIONS = [
     }
 
     const retry = document.getElementById("retryButton");
-    if (state.mode === "normal") retry.addEventListener("click", () => startGame(state.level, "normal"));
-    else if (state.mode === "daily") retry.addEventListener("click", startDaily);
-    else retry.addEventListener("click", () => startCategory(state.categoryGroup));
+    if (state.mode === "daily") retry.addEventListener("click", startDaily);
+    else if (state.categoryGroup) retry.addEventListener("click", () => startCategory(state.categoryGroup, "normal"));
+    else retry.addEventListener("click", () => startGame(state.level, "normal"));
     document.getElementById("topButton").addEventListener("click", showHome);
   }
 
   function showStreakResult() {
     state.view = "streakResult";
-    stats.streakBest[state.level] = Math.max(stats.streakBest[state.level] || 0, state.streak);
+    const key = streakStatsKey();
+    stats.streakBest[key] = Math.max(stats.streakBest[key] || 0, state.streak);
     saveStats();
     refreshAchievements();
     app.replaceChildren(cloneTemplate(streakResultTemplate));
@@ -12104,9 +12136,16 @@ window.QUIZ_QUESTIONS = [
     const display = document.getElementById("streakFinalDisplay");
     display.className = `streak-final-display streak-tier-${tier}`;
     display.innerHTML = `<span class="streak-final-number" data-no-reading="true">${state.streak}</span><strong>問連続正解</strong>`;
-    document.getElementById("streakFinalLevel").textContent = `${LEVELS[state.level].name} 最高記録：${stats.streakBest[state.level]}問`;
-    document.getElementById("streakRetryButton").addEventListener("click", () => startGame(state.level, "streak"));
-    document.getElementById("streakModeBackButton").addEventListener("click", () => showModeSelect(state.level));
+    const label = state.categoryGroup ? (CATEGORY_GROUPS[state.categoryGroup]?.name || "カテゴリ") : LEVELS[state.level].name;
+    document.getElementById("streakFinalLevel").textContent = `${label} 最高記録：${stats.streakBest[key]}問`;
+    document.getElementById("streakRetryButton").addEventListener("click", () => {
+      if (state.categoryGroup) startCategory(state.categoryGroup, "streak");
+      else startGame(state.level, "streak");
+    });
+    document.getElementById("streakModeBackButton").addEventListener("click", () => {
+      if (state.categoryGroup) showCategoryModeSelect(state.categoryGroup);
+      else showModeSelect(state.level);
+    });
     document.getElementById("streakTopButton").addEventListener("click", showHome);
   }
 
