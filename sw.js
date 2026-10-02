@@ -1,4 +1,4 @@
-const CACHE_NAME = "unchiku-eureka-v11";
+const CACHE_NAME = "unchiku-eureka-v12";
 const APP_SHELL = [
   "./",
   "./index.html",
